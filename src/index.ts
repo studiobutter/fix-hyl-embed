@@ -1,6 +1,9 @@
 import { Elysia } from "elysia";
 
-// Type definitions
+/* ============================================================================
+   Interfaces
+============================================================================ */
+
 interface HoYoLabPost {
   post: {
     post_id: string;
@@ -45,7 +48,10 @@ interface PostAPIResponse {
   };
 }
 
-// Utility: Extract post ID or pre-post ID from various URL formats
+/* ============================================================================
+   Utilities
+============================================================================ */
+
 function extractPostId(url: string): { id: string; isPrePost: boolean } | null {
   const patterns = [
     { regex: /hoyolab\.com\/article_pre\/(\d+)/, isPrePost: true },
@@ -63,61 +69,50 @@ function extractPostId(url: string): { id: string; isPrePost: boolean } | null {
   return null;
 }
 
-// Utility: Follow redirects to get final URL
+// Follow redirects (works in Cloudflare Workers)
 async function followRedirects(url: string): Promise<string> {
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      redirect: "follow",
-    });
+    const response = await fetch(url, { method: "GET", redirect: "follow" });
     return response.url;
-  } catch (e) {
-    console.error("Error following redirects:", e);
+  } catch {
     return url;
   }
 }
 
-// Utility: Resolve short link with ?q= parameter
+// Resolve short ?q= links
 async function resolveShortQuery(queryId: string): Promise<string | null> {
   try {
     const response = await fetch(
       `https://bbs-api-os.hoyolab.com/community/misc/api/transit?q=${queryId}`
     );
+
     let finalUrl = response.url;
-    
-    // Check if it's a social_sea_share redirect URL
-    if (finalUrl.includes('social_sea_share/redirectUrl')) {
-      // Extract the encoded URL parameter
+
+    if (finalUrl.includes("social_sea_share/redirectUrl")) {
       const urlMatch = finalUrl.match(/[?&]url=([^&]+)/);
-      if (urlMatch) {
-        // Decode the URL parameter
-        const decodedUrl = decodeURIComponent(urlMatch[1]);
-        finalUrl = decodedUrl;
-      }
+      if (urlMatch) finalUrl = decodeURIComponent(urlMatch[1]);
     }
-    
+
     return finalUrl;
-  } catch (e) {
-    console.error("Error resolving query:", e);
+  } catch {
     return null;
   }
 }
 
-// Utility: Get actual post ID from pre-post ID
+// Convert article_pre → real post ID
 async function getActualPostId(prePostId: string): Promise<string | null> {
   try {
     const response = await fetch(
       `https://bbs-api-os.hoyolab.com/community/post/wapi/getPostID?id=${prePostId}`
     );
-    const data: any = await response.json();
+    const data = (await response.json()) as { data?: { post_id?: string } };
     return data.data?.post_id || null;
-  } catch (e) {
-    console.error("Error getting actual post ID:", e);
+  } catch {
     return null;
   }
 }
 
-// Utility: Fetch post data from HoYoLAB API
+// Fetch post data
 async function fetchPostData(
   postId: string,
   lang: string = "en-us"
@@ -132,183 +127,134 @@ async function fetchPostData(
         },
       }
     );
-    const data = await response.json() as PostAPIResponse;
-    
-    if (data.retcode !== 0) {
-      console.error("API returned error:", data.message);
-      return null;
-    }
-    
+    const data = (await response.json()) as PostAPIResponse;
+
+    if (data.retcode !== 0) return null;
+
     return data.data.post;
-  } catch (e) {
-    console.error("Error fetching post data:", e);
+  } catch {
     return null;
   }
 }
 
-// Generate HTML with Open Graph meta tags for embed
+/* ============================================================================
+   HTML Embed Generator
+============================================================================ */
+
 function generateEmbedHTML(post: HoYoLabPost, postUrl: string): string {
   const { post: postData, user, image_list, cover_list, video, game } = post;
-  
-  // Choose images: cover_list if has_cover, otherwise image_list
+
   const images = postData.has_cover ? cover_list : image_list;
-  const mainImage = images && images.length > 0 ? images[0].url : "";
-  
-  // Handle video posts
+  const mainImage = images?.[0]?.url ?? "";
+
   let embedImage = mainImage;
-  if (postData.view_type === 5 && video) {
-    embedImage = video.cover;
-  }
-  
-  // Clean description (remove HTML tags if any)
-  const cleanDesc = postData.desc.replace(/<[^>]*>/g, '');
-  
-  // Convert hex color to decimal for theme-color
+  if (postData.view_type === 5 && video) embedImage = video.cover;
+
+  const cleanDesc = postData.desc.replace(/<[^>]*>/g, "");
+
   const themeColor = game.color;
-  
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
-  <!-- Open Graph / Discord -->
-  <meta property="og:type" content="article">
-  <meta property="og:url" content="${postUrl}">
-  <meta property="og:title" content="${postData.subject}">
-  <meta property="og:description" content="${cleanDesc}">
-  ${embedImage ? `<meta property="og:image" content="${embedImage}">` : ''}
-  <meta property="og:site_name" content="HoYoLAB">
-  
-  <!-- Twitter Card -->
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="${postData.subject}">
-  <meta name="twitter:description" content="${cleanDesc}">
-  ${embedImage ? `<meta name="twitter:image" content="${embedImage}">` : ''}
-  
-  <!-- Theme Color -->
-  <meta name="theme-color" content="${themeColor}">
-  
-  <!-- Author -->
-  <meta name="author" content="${user.nickname}">
-  
-  <title>${postData.subject} - HoYoLAB</title>
-  
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      max-width: 800px;
-      margin: 40px auto;
-      padding: 20px;
-      background: #f5f5f5;
-    }
-    .container {
-      background: white;
-      border-radius: 12px;
-      padding: 30px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    .author {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-    .author img {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-    }
-    .author-name {
-      font-weight: 600;
-      font-size: 16px;
-    }
-    h1 {
-      margin: 0 0 16px 0;
-      color: #333;
-    }
-    .description {
-      color: #666;
-      line-height: 1.6;
-      margin-bottom: 20px;
-    }
-    .image-gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 12px;
-      margin-top: 20px;
-    }
-    .image-gallery img {
-      width: 100%;
-      border-radius: 8px;
-    }
-    .redirect-btn {
-      display: inline-block;
-      background: ${themeColor};
-      color: white;
-      padding: 12px 24px;
-      border-radius: 8px;
-      text-decoration: none;
-      font-weight: 600;
-      margin-top: 20px;
-    }
-    .redirect-btn:hover {
-      opacity: 0.9;
-    }
-  </style>
-  
-  <!-- Auto redirect after 3 seconds -->
-  <script>
-    setTimeout(() => {
-      window.location.href = "${postUrl}";
-    }, 3000);
-  </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<meta property="og:type" content="article">
+<meta property="og:url" content="${postUrl}">
+<meta property="og:title" content="${postData.subject}">
+<meta property="og:description" content="${cleanDesc}">
+${embedImage ? `<meta property="og:image" content="${embedImage}">` : ""}
+<meta property="og:site_name" content="HoYoLAB">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="${postData.subject}">
+<meta name="twitter:description" content="${cleanDesc}">
+${embedImage ? `<meta name="twitter:image" content="${embedImage}">` : ""}
+
+<meta name="theme-color" content="${themeColor}">
+<meta name="author" content="${user.nickname}">
+
+<title>${postData.subject} - HoYoLAB</title>
+
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
+    max-width: 800px; margin: 40px auto; padding: 20px; background: #f5f5f5;
+  }
+  .container {
+    background: white; border-radius: 12px; padding: 30px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.1);
+  }
+  .author { display:flex; align-items:center; gap:12px; margin-bottom:20px; }
+  .author img { width:48px; height:48px; border-radius:50%; }
+  h1 { margin:0 0 16px 0; }
+  .image-gallery {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+    gap:12px; margin-top:20px;
+  }
+  .image-gallery img { width:100%; border-radius:8px; }
+  .redirect-btn {
+    display:inline-block; background:${themeColor}; color:white;
+    padding:12px 24px; border-radius:8px; margin-top:20px;
+    text-decoration:none; font-weight:600;
+  }
+</style>
+
+<script>
+setTimeout(() => { window.location.href="${postUrl}" }, 3000);
+</script>
+
 </head>
 <body>
-  <div class="container">
-    <div class="author">
-      <img src="${user.avatar_url}" alt="${user.nickname}">
-      <div class="author-name">${user.nickname}</div>
-    </div>
-    
-    <h1>${postData.subject}</h1>
-    <div class="description">${cleanDesc}</div>
-    
-    ${images && images.length > 0 ? `
-    <div class="image-gallery">
-      ${images.slice(0, 4).map(img => `<img src="${img.url}" alt="Post image">`).join('')}
-    </div>
-    ` : ''}
-    
-    <a href="${postUrl}" class="redirect-btn">View on HoYoLAB</a>
-    <p style="color: #999; font-size: 14px; margin-top: 12px;">Redirecting in 3 seconds...</p>
+<div class="container">
+  <div class="author">
+    <img src="${user.avatar_url}">
+    <div>${user.nickname}</div>
   </div>
+  <h1>${postData.subject}</h1>
+  <div>${cleanDesc}</div>
+
+  ${
+    images && images.length > 0
+      ? `<div class="image-gallery">${images
+          .slice(0, 4)
+          .map((i) => `<img src="${i.url}">`)
+          .join("")}</div>`
+      : ""
+  }
+
+  <a class="redirect-btn" href="${postUrl}">View on HoYoLAB</a>
+</div>
 </body>
 </html>`;
 }
 
-// Generate oEmbed response (kept for API compatibility)
+/* ============================================================================
+   oEmbed
+============================================================================ */
+
 function generateOEmbed(post: HoYoLabPost, postUrl: string) {
-  const { post: postData, user, image_list, cover_list } = post;
-  
-  const images = postData.has_cover ? cover_list : image_list;
-  const thumbnailUrl = images && images.length > 0 ? images[0].url : "";
-  
+  const images = post.post.has_cover ? post.cover_list : post.image_list;
+  const thumb = images?.[0]?.url ?? "";
   return {
     version: "1.0",
     type: "link",
-    author_name: user.nickname,
+    author_name: post.user.nickname,
     author_url: postUrl,
     provider_name: "HoYoLAB",
     provider_url: "https://www.hoyolab.com",
-    title: postData.subject,
-    description: postData.desc,
-    thumbnail_url: thumbnailUrl,
+    title: post.post.subject,
+    description: post.post.desc,
+    thumbnail_url: thumb,
   };
 }
 
-// Main Elysia server
-const app = new Elysia({ aot: false})
+/* ============================================================================
+   Routes (same as your original)
+============================================================================ */
+
+const app = new Elysia({ aot: false })
   .get("/", () => ({
     message: "HoYoLAB Embed Fixer",
     endpoints: {
@@ -317,165 +263,104 @@ const app = new Elysia({ aot: false})
       long_link: "/post?post_id={post_id}&lang={lang}",
     },
   }))
-  
-  // Handle short links with ?q= parameter
+
   .get("/q", async ({ query, set }) => {
     const { q, lang = "en-us" } = query as any;
-    
-    if (!q) {
-      set.status = 400;
-      return { error: "Missing q parameter" };
-    }
-    
-    // Resolve the query parameter to get the final URL
+    if (!q) return (set.status = 400), { error: "Missing q parameter" };
+
     const finalUrl = await resolveShortQuery(q);
-    if (!finalUrl) {
-      set.status = 500;
-      return { error: "Failed to resolve short link" };
-    }
-    
+    if (!finalUrl) return (set.status = 500), { error: "Failed to resolve short link" };
+
     const extracted = extractPostId(finalUrl);
-    if (!extracted) {
-      set.status = 400;
-      return { 
-        error: "Not a HoYoLAB post link", 
+    if (!extracted)
+      return (set.status = 400), {
+        error: "Not a HoYoLAB post link",
         original_url: finalUrl,
-        message: "This link redirects to a non-HoYoLAB page"
       };
-    }
-    
-    // If it's a pre-post ID, resolve it to actual post ID
+
     let postId = extracted.id;
     if (extracted.isPrePost) {
-      const actualId = await getActualPostId(extracted.id);
-      if (!actualId) {
-        set.status = 500;
-        return { error: "Failed to resolve pre-post ID" };
-      }
-      postId = actualId;
+      const actual = await getActualPostId(extracted.id);
+      if (!actual) return (set.status = 500), { error: "Failed to resolve pre-post ID" };
+      postId = actual;
     }
-    
+
     const postData = await fetchPostData(postId, lang);
-    if (!postData) {
-      set.status = 500;
-      return { error: "Failed to fetch post data" };
-    }
-    
+    if (!postData) return (set.status = 500), { error: "Failed to fetch post data" };
+
     set.headers["content-type"] = "text/html; charset=utf-8";
     return generateEmbedHTML(postData, `https://www.hoyolab.com/article/${postId}`);
   })
-  
-  // Handle short links (hoyo.link redirects)
+
   .get("/sh", async ({ query, set }) => {
     const { redirect, lang = "en-us" } = query as any;
-    
-    if (!redirect) {
-      set.status = 400;
-      return { error: "Missing redirect parameter" };
-    }
-    
-    // Handle hoyo.link redirects
-    const shortUrl = `https://hoyo.link/${redirect}`;
-    const finalUrl = await followRedirects(shortUrl);
-    
+    if (!redirect) return (set.status = 400), { error: "Missing redirect parameter" };
+
+    const finalUrl = await followRedirects(`https://hoyo.link/${redirect}`);
     const extracted = extractPostId(finalUrl);
-    if (!extracted) {
-      set.status = 400;
-      return { 
-        error: "Not a HoYoLAB post link", 
+
+    if (!extracted)
+      return (set.status = 400), {
+        error: "Not a HoYoLAB post link",
         original_url: finalUrl,
-        message: "This short link redirects to a non-HoYoLAB page"
       };
-    }
-    
-    // If it's a pre-post ID, resolve it to actual post ID
+
     let postId = extracted.id;
     if (extracted.isPrePost) {
-      const actualId = await getActualPostId(extracted.id);
-      if (!actualId) {
-        set.status = 500;
-        return { error: "Failed to resolve pre-post ID" };
-      }
-      postId = actualId;
+      const actual = await getActualPostId(extracted.id);
+      if (!actual) return (set.status = 500), { error: "Failed to resolve pre-post ID" };
+      postId = actual;
     }
-    
+
     const postData = await fetchPostData(postId, lang);
-    if (!postData) {
-      set.status = 500;
-      return { error: "Failed to fetch post data" };
-    }
-    
+    if (!postData) return (set.status = 500), { error: "Failed to fetch post data" };
+
     set.headers["content-type"] = "text/html; charset=utf-8";
     return generateEmbedHTML(postData, `https://www.hoyolab.com/article/${postId}`);
   })
-  
-  // Handle long links
+
   .get("/post", async ({ query, set }) => {
     const { post_id, lang = "en-us" } = query as any;
-    
-    if (!post_id) {
-      set.status = 400;
-      return { error: "Missing post_id parameter" };
-    }
-    
-    let actualPostId = post_id;
-    
-    // Check if this is a very long pre_post_id (article_pre format)
-    // Pre-post IDs are typically much longer (18+ digits)
+    if (!post_id) return (set.status = 400), { error: "Missing post_id" };
+
+    let actual = post_id;
     if (post_id.length > 15) {
       const resolved = await getActualPostId(post_id);
-      if (resolved) {
-        actualPostId = resolved;
-      } else {
-        set.status = 500;
-        return { error: "Failed to resolve pre-post ID" };
-      }
+      if (!resolved) return (set.status = 500), { error: "Failed to resolve pre-post ID" };
+      actual = resolved;
     }
-    
-    const postData = await fetchPostData(actualPostId, lang);
-    if (!postData) {
-      set.status = 500;
-      return { error: "Failed to fetch post data" };
-    }
-    
+
+    const postData = await fetchPostData(actual, lang);
+    if (!postData) return (set.status = 500), { error: "Failed to fetch post data" };
+
     set.headers["content-type"] = "text/html; charset=utf-8";
-    return generateEmbedHTML(postData, `https://www.hoyolab.com/article/${actualPostId}`);
+    return generateEmbedHTML(postData, `https://www.hoyolab.com/article/${actual}`);
   })
-  
-  // oEmbed endpoint
+
   .get("/oembed", async ({ query }) => {
     const { url, lang = "en-us" } = query as any;
-    
-    if (!url) {
-      return { error: "Missing url parameter" };
-    }
-    
+    if (!url) return { error: "Missing url parameter" };
+
     const extracted = extractPostId(url);
-    if (!extracted) {
-      return { error: "Invalid HoYoLAB URL" };
-    }
-    
-    // If it's a pre-post ID, resolve it to actual post ID
+    if (!extracted) return { error: "Invalid HoYoLAB URL" };
+
     let postId = extracted.id;
     if (extracted.isPrePost) {
       const actualId = await getActualPostId(extracted.id);
-      if (!actualId) {
-        return { error: "Failed to resolve pre-post ID" };
-      }
+      if (!actualId) return { error: "Failed to resolve pre-post ID" };
       postId = actualId;
     }
-    
+
     const postData = await fetchPostData(postId, lang);
-    if (!postData) {
-      return { error: "Failed to fetch post data" };
-    }
-    
+    if (!postData) return { error: "Failed to fetch post data" };
+
     return generateOEmbed(postData, url);
-  })
-  
-// Cloudflare Workers expects a specific object with a fetch method
+  });
+
+/* ============================================================================
+   Cloudflare Worker Export
+============================================================================ */
+
 export default {
-    fetch(request: Request, env: any, ctx: any) {
-        return app.fetch(request);
-    }
+  fetch: (req: Request) => app.fetch(req),
 };
