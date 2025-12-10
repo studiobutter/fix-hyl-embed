@@ -2,14 +2,14 @@
   "version": 2,
   "builds": [
     {
-      "src": "src/index.tsx",
+      "src": "src/index.ts",
       "use": "@vercel/bun"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "src/index.tsx"
+      "dest": "src/index.ts"
     }
   ],
   "bunVersion": "1.x"
