@@ -1,1 +1,40 @@
-/node_modules
+# Bun
+node_modules
+bun.lockb
+*.bun
+
+# Build output
+dist/
+.output/
+.vercel/
+.wrangler/
+
+# Environment
+.env
+.env.local
+.env.production
+.dev.vars
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# TypeScript
+*.tsbuildinfo
+
+# Others
+wrangler.toml

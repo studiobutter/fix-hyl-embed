@@ -146,73 +146,153 @@ async function fetchPostData(
   }
 }
 
-// Generate Discord embed JSON
-function generateEmbed(post: HoYoLabPost, postUrl: string) {
-  const { post: postData, user, image_list, cover_list, video, game, ugc_module } = post;
-  
-  // Determine color from game
-  const color = parseInt(game.color.replace("#", ""), 16);
+// Generate HTML with Open Graph meta tags for embed
+function generateEmbedHTML(post: HoYoLabPost, postUrl: string): string {
+  const { post: postData, user, image_list, cover_list, video, game } = post;
   
   // Choose images: cover_list if has_cover, otherwise image_list
   const images = postData.has_cover ? cover_list : image_list;
+  const mainImage = images && images.length > 0 ? images[0].url : "";
   
-  const embeds: any[] = [];
-  
-  // Main embed
-  const mainEmbed: any = {
-    author: {
-      name: user.nickname,
-      icon_url: user.avatar_url,
-    },
-    title: postData.subject,
-    description: postData.desc,
-    url: postUrl,
-    color: color,
-  };
-  
-  // Handle Video Posts (view_type = 5)
+  // Handle video posts
+  let embedImage = mainImage;
   if (postData.view_type === 5 && video) {
-    if (video.sub_type === 0) {
-      // YouTube video - use cover image
-      mainEmbed.image = { url: video.cover };
-    } else {
-      // HoYoLAB CDN video - could link to video
-      mainEmbed.image = { url: video.cover };
+    embedImage = video.cover;
+  }
+  
+  // Clean description (remove HTML tags if any)
+  const cleanDesc = postData.desc.replace(/<[^>]*>/g, '');
+  
+  // Convert hex color to decimal for theme-color
+  const themeColor = game.color;
+  
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Open Graph / Discord -->
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="${postUrl}">
+  <meta property="og:title" content="${postData.subject}">
+  <meta property="og:description" content="${cleanDesc}">
+  ${embedImage ? `<meta property="og:image" content="${embedImage}">` : ''}
+  <meta property="og:site_name" content="HoYoLAB">
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${postData.subject}">
+  <meta name="twitter:description" content="${cleanDesc}">
+  ${embedImage ? `<meta name="twitter:image" content="${embedImage}">` : ''}
+  
+  <!-- Theme Color -->
+  <meta name="theme-color" content="${themeColor}">
+  
+  <!-- Author -->
+  <meta name="author" content="${user.nickname}">
+  
+  <title>${postData.subject} - HoYoLAB</title>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
     }
-  } else if (images && images.length > 0) {
-    // Regular posts with images
-    mainEmbed.image = { url: images[0].url };
-  }
-  
-  // Handle Genius Column (Wonderland levels)
-  if (ugc_module && ugc_module.ugc_levels && ugc_module.ugc_levels.length > 0) {
-    const level = ugc_module.ugc_levels[0].level;
-    mainEmbed.fields = [
-      {
-        name: level.level_name,
-        value: `- [Open in Genshin](https://link.studiobutter.io.vn/ugc/wonderland?ugc_id=${level.level_id}&server=${level.region})\n- [View Level](https://act.hoyolab.com/ys/ugc_community/mx/#/pages/level-detail/index?id=${level.level_id}&region=${level.region})`,
-      },
-    ];
-  }
-  
-  embeds.push(mainEmbed);
-  
-  // Additional image embeds (for posts with multiple images)
-  if (images && images.length > 1) {
-    for (let i = 1; i < images.length && i < 4; i++) {
-      embeds.push({
-        url: postUrl,
-        image: { url: images[i].url },
-      });
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
-  }
+    .author {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .author img {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+    }
+    .author-name {
+      font-weight: 600;
+      font-size: 16px;
+    }
+    h1 {
+      margin: 0 0 16px 0;
+      color: #333;
+    }
+    .description {
+      color: #666;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+    .image-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .image-gallery img {
+      width: 100%;
+      border-radius: 8px;
+    }
+    .redirect-btn {
+      display: inline-block;
+      background: ${themeColor};
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      margin-top: 20px;
+    }
+    .redirect-btn:hover {
+      opacity: 0.9;
+    }
+  </style>
   
-  return { embeds };
+  <!-- Auto redirect after 3 seconds -->
+  <script>
+    setTimeout(() => {
+      window.location.href = "${postUrl}";
+    }, 3000);
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="author">
+      <img src="${user.avatar_url}" alt="${user.nickname}">
+      <div class="author-name">${user.nickname}</div>
+    </div>
+    
+    <h1>${postData.subject}</h1>
+    <div class="description">${cleanDesc}</div>
+    
+    ${images && images.length > 0 ? `
+    <div class="image-gallery">
+      ${images.slice(0, 4).map(img => `<img src="${img.url}" alt="Post image">`).join('')}
+    </div>
+    ` : ''}
+    
+    <a href="${postUrl}" class="redirect-btn">View on HoYoLAB</a>
+    <p style="color: #999; font-size: 14px; margin-top: 12px;">Redirecting in 3 seconds...</p>
+  </div>
+</body>
+</html>`;
 }
 
-// Generate oEmbed response
+// Generate oEmbed response (kept for API compatibility)
 function generateOEmbed(post: HoYoLabPost, postUrl: string) {
-  const { post: postData, user } = post;
+  const { post: postData, user, image_list, cover_list } = post;
+  
+  const images = postData.has_cover ? cover_list : image_list;
+  const thumbnailUrl = images && images.length > 0 ? images[0].url : "";
   
   return {
     version: "1.0",
@@ -223,6 +303,7 @@ function generateOEmbed(post: HoYoLabPost, postUrl: string) {
     provider_url: "https://www.hoyolab.com",
     title: postData.subject,
     description: postData.desc,
+    thumbnail_url: thumbnailUrl,
   };
 }
 
@@ -238,21 +319,24 @@ const app = new Elysia()
   }))
   
   // Handle short links with ?q= parameter
-  .get("/q", async ({ query }) => {
+  .get("/q", async ({ query, set }) => {
     const { q, lang = "en-us" } = query as any;
     
     if (!q) {
+      set.status = 400;
       return { error: "Missing q parameter" };
     }
     
     // Resolve the query parameter to get the final URL
     const finalUrl = await resolveShortQuery(q);
     if (!finalUrl) {
+      set.status = 500;
       return { error: "Failed to resolve short link" };
     }
     
     const extracted = extractPostId(finalUrl);
     if (!extracted) {
+      set.status = 400;
       return { 
         error: "Not a HoYoLAB post link", 
         original_url: finalUrl,
@@ -265,6 +349,7 @@ const app = new Elysia()
     if (extracted.isPrePost) {
       const actualId = await getActualPostId(extracted.id);
       if (!actualId) {
+        set.status = 500;
         return { error: "Failed to resolve pre-post ID" };
       }
       postId = actualId;
@@ -272,17 +357,20 @@ const app = new Elysia()
     
     const postData = await fetchPostData(postId, lang);
     if (!postData) {
+      set.status = 500;
       return { error: "Failed to fetch post data" };
     }
     
-    return generateEmbed(postData, `https://www.hoyolab.com/article/${postId}`);
+    set.headers["content-type"] = "text/html; charset=utf-8";
+    return generateEmbedHTML(postData, `https://www.hoyolab.com/article/${postId}`);
   })
   
   // Handle short links (hoyo.link redirects)
-  .get("/sh", async ({ query }) => {
+  .get("/sh", async ({ query, set }) => {
     const { redirect, lang = "en-us" } = query as any;
     
     if (!redirect) {
+      set.status = 400;
       return { error: "Missing redirect parameter" };
     }
     
@@ -292,6 +380,7 @@ const app = new Elysia()
     
     const extracted = extractPostId(finalUrl);
     if (!extracted) {
+      set.status = 400;
       return { 
         error: "Not a HoYoLAB post link", 
         original_url: finalUrl,
@@ -304,6 +393,7 @@ const app = new Elysia()
     if (extracted.isPrePost) {
       const actualId = await getActualPostId(extracted.id);
       if (!actualId) {
+        set.status = 500;
         return { error: "Failed to resolve pre-post ID" };
       }
       postId = actualId;
@@ -311,17 +401,20 @@ const app = new Elysia()
     
     const postData = await fetchPostData(postId, lang);
     if (!postData) {
+      set.status = 500;
       return { error: "Failed to fetch post data" };
     }
     
-    return generateEmbed(postData, `https://www.hoyolab.com/article/${postId}`);
+    set.headers["content-type"] = "text/html; charset=utf-8";
+    return generateEmbedHTML(postData, `https://www.hoyolab.com/article/${postId}`);
   })
   
   // Handle long links
-  .get("/post", async ({ query }) => {
+  .get("/post", async ({ query, set }) => {
     const { post_id, lang = "en-us" } = query as any;
     
     if (!post_id) {
+      set.status = 400;
       return { error: "Missing post_id parameter" };
     }
     
@@ -334,16 +427,19 @@ const app = new Elysia()
       if (resolved) {
         actualPostId = resolved;
       } else {
+        set.status = 500;
         return { error: "Failed to resolve pre-post ID" };
       }
     }
     
     const postData = await fetchPostData(actualPostId, lang);
     if (!postData) {
+      set.status = 500;
       return { error: "Failed to fetch post data" };
     }
     
-    return generateEmbed(postData, `https://www.hoyolab.com/article/${actualPostId}`);
+    set.headers["content-type"] = "text/html; charset=utf-8";
+    return generateEmbedHTML(postData, `https://www.hoyolab.com/article/${actualPostId}`);
   })
   
   // oEmbed endpoint

@@ -6,14 +6,18 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir ./dist --target bun",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "cf:dev": "wrangler dev",
+    "cf:tail": "wrangler tail"
   },
   "dependencies": {
     "elysia": "^1.1.28"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "wrangler": "^3.78.0"
   },
   "module": "src/index.ts",
   "type": "module"
