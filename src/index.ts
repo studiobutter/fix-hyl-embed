@@ -132,7 +132,7 @@ async function fetchPostData(
         },
       }
     );
-    const data: PostAPIResponse = await response.json();
+    const data = await response.json() as PostAPIResponse;
     
     if (data.retcode !== 0) {
       console.error("API returned error:", data.message);
