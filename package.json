@@ -3,18 +3,18 @@
   "version": "1.0.0",
   "description": "HoYoLAB embed fixer using Bun, TypeScript, and Elysia.js",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir ./dist --target bun",
     "type-check": "tsc --noEmit",
     "deploy": "wrangler deploy",
-    "cf:dev": "wrangler dev",
+    "dev": "wrangler dev",
     "cf:tail": "wrangler tail"
   },
   "dependencies": {
     "elysia": "^1.1.28"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251210.0",
     "@types/bun": "latest",
     "typescript": "^5.7.2",
     "wrangler": "^3.78.0"

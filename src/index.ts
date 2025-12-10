@@ -308,7 +308,7 @@ function generateOEmbed(post: HoYoLabPost, postUrl: string) {
 }
 
 // Main Elysia server
-const app = new Elysia()
+const app = new Elysia({ aot: false})
   .get("/", () => ({
     message: "HoYoLAB Embed Fixer",
     endpoints: {
@@ -473,8 +473,9 @@ const app = new Elysia()
     return generateOEmbed(postData, url);
   })
   
-  .listen(3000);
-
-console.log(
-  `🦊 HoYoLAB Embed Fixer is running at ${app.server?.hostname}:${app.server?.port}`
-);
+// Cloudflare Workers expects a specific object with a fetch method
+export default {
+    fetch(request: Request, env: any, ctx: any) {
+        return app.fetch(request);
+    }
+};
